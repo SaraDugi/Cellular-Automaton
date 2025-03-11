@@ -1,10 +1,9 @@
 import sys
 import pygame
-import numpy as np
 from constants import (
-    WIDTH, HEIGHT, CELL_SIZE, FPS,
+    WIDTH, HEIGHT, FPS,
     BLACK, WHITE, RED,
-    FONT_TITLE, FONT_MENU, FONT_INPUT
+    FONT_TITLE, FONT_MENU, FONT_INPUT, CELL_SIZE
 )
 from automation_1d import run_automaton_1D, draw_1D_automaton
 from simulation_2d import run_simulation_2D
@@ -79,7 +78,7 @@ def main():
 
             elif state == GameState.SIMULATE_2D:
                 run_simulation_2D()
-                state = GameState.MENU
+                running = False
 
         if state == GameState.MENU:
             screen.fill(BLACK)

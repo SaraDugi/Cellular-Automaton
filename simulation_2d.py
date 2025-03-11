@@ -1,146 +1,80 @@
 import sys
 import pygame
 import numpy as np
-import random        
-from constants import *
+import random
+from constants import (
+    WIDTH, HEIGHT, CELL_SIZE, FPS,
+    BLACK, WHITE,
+    SAND_COLOR, FIRE_COLOR, WOOD_COLOR,
+    ROWS, COLS,
+    INITIAL_LIVE_RATIO,
+    INITIAL_SAND_RATIO,
+    FIRE_TO_SMOKE_CHANCE,
+    SMOKE_LIFETIME
+)
 
-# ------------------------ Pomožne matrike ------------------------
-water_amount = np.zeros((ROWS, COLS), dtype=float)
-smoke_timer  = np.zeros((ROWS, COLS), dtype=int)
+BASE_COLOR_MAP = {
+    0: BLACK,
+    1: (128, 128, 128),
+    2: SAND_COLOR,
+    3: FIRE_COLOR,
+    4: WOOD_COLOR,
+    5: (32, 32, 32),
+    6: (192, 192, 192),
+    7: (0, 0, 255) 
+}
 
-# ------------------------ Pygame inicializacija ------------------------
 pygame.init()
-screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-pygame.display.set_caption("2D Celicni Avtomat: B678/S2345678 + Sand/Wood/Fire/Smoke/Water/Balloon")
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("2D Cellular Automata: Wall/Sand/Fire/Wood/Smoke/Water")
 clock = pygame.time.Clock()
-
 info_font = pygame.font.SysFont("Arial", 16)
-selected_state = BALLOON
+menu_font = pygame.font.SysFont("Arial", 18, bold=True)
+smoke_timer = np.zeros((ROWS, COLS), dtype=int)
+water_levels = np.zeros((ROWS, COLS), dtype=float)
+selected_state = 3  
 
-# ------------------------ Funkcije za CA ------------------------
-
-def create_initial_grid(rows, cols, live_ratio, sand_ratio):
+def create_initial_grid(rows, cols, wall_ratio, sand_ratio):
     """
-    Ustvari začetno mrežo za 'jamaste' strukture in dodani pesek:
-      - S probability 'live_ratio' => LIVE
-      - S probability 'sand_ratio' => SAND
-      - Ostalo => EMPTY
-    Druge elemente (WOOD, FIRE, WATER, SMOKE, BALLOON) ne postavljamo naključno,
-    ampak jih lahko dodamo ročno med simulacijo.
+    Creates the initial grid.
+      - With probability 'wall_ratio' the cell becomes a WALL (state 1).
+      - With probability 'sand_ratio' the cell becomes SAND (state 2).
+      - Else the cell is EMPTY (state 0).
+    (Wood and water are not generated randomly; you can paint them.)
     """
     grid = np.zeros((rows, cols), dtype=int)
     for r in range(rows):
         for c in range(cols):
             rnd = random.random()
-            if rnd < live_ratio:
-                grid[r, c] = LIVE
-            elif rnd < live_ratio + sand_ratio:
-                grid[r, c] = SAND
+            if rnd < wall_ratio:
+                grid[r, c] = 1  
+            elif rnd < wall_ratio + sand_ratio:
+                grid[r, c] = 2  
             else:
-                grid[r, c] = EMPTY
+                grid[r, c] = 0  
     return grid
 
-def count_live_neighbors(grid, r, c):
-    """
-    Prešteje 'žive' sosede (LIVE = 1) celice (r, c) v Moorovi okolici (8 sosed).
-    Pesek, les, ogenj, dim, voda, balon se NE štejejo kot 'živi' za B678/S2345678.
-    """
-    rows, cols = grid.shape
-    alive_count = 0
-    for dr in [-1, 0, 1]:
-        for dc in [-1, 0, 1]:
-            if dr == 0 and dc == 0:
-                continue
-            rr = r + dr
-            cc = c + dc
-            if 0 <= rr < rows and 0 <= cc < cols:
-                if grid[rr, cc] == LIVE:
-                    alive_count += 1
-    return alive_count
-
-def update_live_empty(old_grid, new_grid, r, c):
-    """
-    B678/S2345678 za stanja LIVE (1) in EMPTY (0).
-    """
-    cell_state = old_grid[r, c]
-    alive_neighbors = count_live_neighbors(old_grid, r, c)
-
-    if cell_state == LIVE:
-        # Preživi, če je alive_neighbors v SURVIVE_NEIGHBORS
-        if alive_neighbors in SURVIVE_NEIGHBORS:
-            new_grid[r, c] = LIVE
-        else:
-            new_grid[r, c] = EMPTY
-    elif cell_state == EMPTY:
-        # Rodi se, če je alive_neighbors v BIRTH_NEIGHBORS
-        if alive_neighbors in BIRTH_NEIGHBORS:
-            new_grid[r, c] = LIVE
-        else:
-            new_grid[r, c] = EMPTY
-
 def update_sand(old_grid, new_grid, r, c):
-    """
-    Osnovna logika padanja peska:
-     - Najprej poskusimo dol, če je prazno (EMPTY) ali voda (WATER) z malo vode,
-       se lahko 'zasidra' spodaj.
-     - Sicer poskusimo diagonalno levo/desno.
-    """
     rows, cols = old_grid.shape
     below = r + 1
-    if below < rows:
-        below_state = old_grid[below, c]
-        if below_state == EMPTY or below_state == WATER:
-            new_grid[below, c] = SAND
-            new_grid[r, c] = EMPTY
-        else:
-            move_candidates = []
-            if c - 1 >= 0:
-                if old_grid[below, c-1] in (EMPTY, WATER):
-                    move_candidates.append((below, c-1))
-            if c + 1 < cols:
-                if old_grid[below, c+1] in (EMPTY, WATER):
-                    move_candidates.append((below, c+1))
-            if move_candidates:
-                nr, nc = random.choice(move_candidates)
-                new_grid[nr, nc] = SAND
-                new_grid[r, c] = EMPTY
-            else:
-                new_grid[r, c] = SAND
+    if below < rows and old_grid[below, c] == 0:
+        new_grid[below, c] = 2
+        new_grid[r, c] = 0
     else:
-        new_grid[r, c] = SAND
-
-def update_wood(old_grid, new_grid, r, c):
-    """
-    Les (WOOD) pada navzdol, če je spodaj prazno ali voda.
-    Če je v soseščini ogenj, obstaja verjetnost, da se vname.
-    """
-    rows, cols = old_grid.shape
-    below = r + 1
-    for dr in [-1, 0, 1]:
-        for dc in [-1, 0, 1]:
-            rr = r + dr
-            cc = c + dc
-            if 0 <= rr < rows and 0 <= cc < cols:
-                if old_grid[rr, cc] == FIRE:
-                    if random.random() < WOOD_BURN_CHANCE:
-                        new_grid[r, c] = FIRE
-                        return
-    if below < rows:
-        below_state = old_grid[below, c]
-        if below_state == EMPTY or below_state == WATER:
-            new_grid[below, c] = WOOD
-            new_grid[r, c] = EMPTY
+        candidates = []
+        if below < rows:
+            if c - 1 >= 0 and old_grid[below, c-1] == 0:
+                candidates.append((below, c-1))
+            if c + 1 < cols and old_grid[below, c+1] == 0:
+                candidates.append((below, c+1))
+        if candidates:
+            nr, nc = random.choice(candidates)
+            new_grid[nr, nc] = 2
+            new_grid[r, c] = 0
         else:
-            new_grid[r, c] = WOOD
-    else:
-        new_grid[r, c] = WOOD
+            new_grid[r, c] = 2
 
 def update_fire(old_grid, new_grid, r, c):
-    """
-    Ogenj (FIRE) se premika naključno navzdol. Če "pristane" na gorljivem elementu (WOOD),
-    ga spremeni v ogenj in se sam spremeni v dim (SMOKE) – oz. z verjetnostjo.
-    Sicer se spremeni v dim, ko se premakne na prazno ali drugo celico.
-    """
     rows, cols = old_grid.shape
     candidates = []
     for dc in [-1, 0, 1]:
@@ -150,356 +84,261 @@ def update_fire(old_grid, new_grid, r, c):
     random.shuffle(candidates)
     moved = False
     for (nr, nc) in candidates:
-        target_state = old_grid[nr, nc]
-        if target_state == WOOD:
-            new_grid[nr, nc] = FIRE
-            if random.random() < FIRE_TO_SMOKE_CHANCE:
-                new_grid[r, c] = SMOKE
-                smoke_timer[r, c] = SMOKE_LIFETIME
+        target = old_grid[nr, nc]
+        if target in (0, 2, 4):
+            if target == 4:
+                new_grid[nr, nc] = 5  
             else:
-                new_grid[r, c] = EMPTY
-            moved = True
-            break
-        elif target_state in (EMPTY, WATER, SAND, LIVE, SMOKE, BALLOON):
-            new_grid[nr, nc] = FIRE
-            if random.random() < FIRE_TO_SMOKE_CHANCE:
-                new_grid[r, c] = SMOKE
-                smoke_timer[r, c] = SMOKE_LIFETIME
-            else:
-                new_grid[r, c] = EMPTY
+                new_grid[nr, nc] = 6 
+            smoke_timer[nr, nc] = SMOKE_LIFETIME
+            new_grid[r, c] = 0
             moved = True
             break
     if not moved:
-        new_grid[r, c] = FIRE
+        new_grid[r, c] = 3
+
+def update_wood(old_grid, new_grid, r, c):
+    rows, cols = old_grid.shape
+    for dr in [-1, 0, 1]:
+        for dc in [-1, 0, 1]:
+            if dr == 0 and dc == 0:
+                continue
+            rr = r + dr
+            cc = c + dc
+            if 0 <= rr < rows and 0 <= cc < cols:
+                if old_grid[rr, cc] == 3:
+                    new_grid[r, c] = 3
+                    return
+    below = r + 1
+    if below < rows and old_grid[below, c] == 0:
+        new_grid[below, c] = 4
+        new_grid[r, c] = 0
+    else:
+        new_grid[r, c] = 4
 
 def update_smoke(old_grid, new_grid, r, c):
-    """
-    Dim (SMOKE) se premika navzgor (naključno med zgoraj levo, zgoraj, zgoraj desno).
-    Ima omejeno življenjsko dobo. Ko se čas izteče, postane EMPTY.
-    """
     rows, cols = old_grid.shape
-    if smoke_timer[r, c] <= 0:
-        new_grid[r, c] = EMPTY
+    current_lifetime = smoke_timer[r, c]
+    if current_lifetime <= 0:
+        new_grid[r, c] = 0
         return
-
-    candidates = []
+    new_lifetime = current_lifetime - 1
+    upward_candidates = []
     for dc in [-1, 0, 1]:
         nr, nc = r - 1, c + dc
         if 0 <= nr < rows and 0 <= nc < cols:
-            candidates.append((nr, nc))
-    random.shuffle(candidates)
-    moved = False
-    for (nr, nc) in candidates:
-        if old_grid[nr, nc] == EMPTY:
-            new_grid[nr, nc] = SMOKE
-            smoke_timer[nr, nc] = smoke_timer[r, c]
-            new_grid[r, c] = EMPTY
-            smoke_timer[r, c] = 0
-            moved = True
-            break
-    if not moved:
+            if old_grid[nr, nc] == 0:
+                upward_candidates.append((nr, nc))
+    if upward_candidates:
+        nr, nc = random.choice(upward_candidates)
+        new_grid[nr, nc] = old_grid[r, c]
+        smoke_timer[nr, nc] = new_lifetime
+        new_grid[r, c] = 0
+    else:
         side_candidates = []
         for dc in [-1, 1]:
-            nc = c + dc
-            if 0 <= nc < cols:
+            nr, nc = r, c + dc
+            if 0 <= nc < cols and old_grid[r, nc] == 0:
                 side_candidates.append((r, nc))
-        random.shuffle(side_candidates)
-        for (nr, nc) in side_candidates:
-            if old_grid[nr, nc] == EMPTY:
-                new_grid[nr, nc] = SMOKE
-                smoke_timer[nr, nc] = smoke_timer[r, c]
-                new_grid[r, c] = EMPTY
-                smoke_timer[r, c] = 0
-                moved = True
-                break
-    if not moved:
-        new_grid[r, c] = SMOKE
-    smoke_timer[r, c] -= 1
-    if smoke_timer[r, c] <= 0:
-        new_grid[r, c] = EMPTY
-
-def update_balloon(old_grid, new_grid, r, c):
-    """
-    Balon (BALLOON) se premika navzgor (naključno med levo, sredi in desno).
-    Če naleti na kakršenkoli element, "poči" (postane EMPTY).
-    """
-    rows, cols = old_grid.shape
-    candidates = []
-    for dc in [-1, 0, 1]:
-        nr, nc = r - 1, c + dc
-        if 0 <= nr < rows and 0 <= nc < cols:
-            candidates.append((nr, nc))
-    random.shuffle(candidates)
-    moved = False
-    for (nr, nc) in candidates:
-        if old_grid[nr, nc] == EMPTY:
-            new_grid[nr, nc] = BALLOON
-            new_grid[r, c] = EMPTY
-            moved = True
-            break
+        if side_candidates:
+            nr, nc = random.choice(side_candidates)
+            new_grid[nr, nc] = old_grid[r, c]
+            smoke_timer[nr, nc] = new_lifetime
+            new_grid[r, c] = 0
         else:
-            new_grid[r, c] = EMPTY
-            moved = True
-            break
-    if not moved:
-        new_grid[r, c] = EMPTY
-
-def spread_water_once(r, c, new_grid):
-    """
-    Preprost model pretakanja vode znotraj 8-sosedske okolice.
-    """
-    rows, cols = new_grid.shape
-    current_amount = water_amount[r, c]
-    if current_amount <= 0:
-        return
-    directions = [
-        (1, 0),   # dol
-        (1, -1),  # diagonalno dol-levo
-        (1, 1),   # diagonalno dol-desno
-        (0, -1),  # levo
-        (0, 1),   # desno
-        (-1, 0),  # gor
-    ]
-    for (dr, dc) in directions:
-        nr, nc = r + dr, c + dc
-        if 0 <= nr < rows and 0 <= nc < cols:
-            neighbor_state = new_grid[nr, nc]
-            if neighbor_state in [EMPTY, WATER, LIVE, SAND]:
-                if neighbor_state != WATER:
-                    new_grid[nr, nc] = WATER
-                neighbor_amt = water_amount[nr, nc]
-                capacity_left = MAX_WATER_CAPACITY - neighbor_amt
-                if capacity_left > 0:
-                    flow = min(current_amount * 0.5, capacity_left)
-                    water_amount[r, c]    -= flow
-                    water_amount[nr, nc] += flow
-                    current_amount -= flow
-                    if current_amount <= 0:
-                        break
+            new_grid[r, c] = old_grid[r, c]
+            smoke_timer[r, c] = new_lifetime
 
 def update_water(old_grid, new_grid, r, c):
     """
-    Voda ostane WATER, količina pa se premika.
+    Update water (state 7). Water flows:
+      - Down if possible.
+      - Otherwise, splits left and right.
+      - If overfull (>1.0), excess flows upward.
+    Water levels are stored in the global 'water_levels' array.
     """
-    new_grid[r, c] = WATER
+    amount = water_levels[r, c]
+    if amount <= 0:
+        return
+    if r + 1 < ROWS:
+        if old_grid[r+1, c] == 7:
+            capacity = max(0, 1.0 - water_levels[r+1, c])
+        elif old_grid[r+1, c] == 0:
+            capacity = 1.0
+        else:
+            capacity = 0
+        flow = min(amount, capacity)
+        if flow > 0:
+            water_levels[r+1, c] += flow
+            water_levels[r, c] -= flow
+            new_grid[r+1, c] = 7
+            new_grid[r, c] = 7 if water_levels[r, c] > 0 else 0
+            return
 
-# ------------------------ Glavna funkcija za eno generacijo ------------------------
+    for dc in [-1, 1]:
+        nc = c + dc
+        if 0 <= nc < COLS:
+            if old_grid[r, nc] in (0, 7):
+                if old_grid[r, nc] == 7:
+                    capacity = max(0, 1.0 - water_levels[r, nc])
+                else:
+                    capacity = 1.0
+                share = min(amount, 0.25, capacity)
+                if share > 0:
+                    water_levels[r, nc] += share
+                    water_levels[r, c] -= share
+                    new_grid[r, nc] = 7
+                    new_grid[r, c] = 7 if water_levels[r, c] > 0 else 0
 
-def next_generation(grid):
-    """
-    Izračuna naslednjo generacijo 2D mreže z več prehodi:
-      1) LIVE/EMPTY (B678/S2345678)
-      2) FIRE in SMOKE (zgoraj navzdol)
-      3) BALLOON (zgoraj navzdol)
-      4) SAND in WOOD (spodaj navzdol)
-      5) WATER (pretakanje)
-    Vrne novo mrežo in posodobi water_amount, smoke_timer.
-    """
-    rows, cols = grid.shape
-    new_grid = np.copy(grid)
-
-    # 1) LIVE / EMPTY
-    for r in range(rows):
-        for c in range(cols):
-            if grid[r, c] in (LIVE, EMPTY):
-                update_live_empty(grid, new_grid, r, c)
-
-    # 2) FIRE in SMOKE
-    for r in range(rows):
-        for c in range(cols):
-            state = grid[r, c]
-            if state == FIRE:
-                update_fire(grid, new_grid, r, c)
-            elif state == SMOKE:
-                if new_grid[r, c] == SMOKE:
-                    update_smoke(grid, new_grid, r, c)
-
-    # 3) BALLOON
-    for r in range(rows):
-        for c in range(cols):
-            if grid[r, c] == BALLOON:
-                if new_grid[r, c] == BALLOON:
-                    update_balloon(grid, new_grid, r, c)
-
-    # 4) SAND in WOOD (od spodaj navzdol)
-    for r in range(rows - 1, -1, -1):
-        for c in range(cols):
-            state = grid[r, c]
-            if state == SAND:
-                if new_grid[r, c] == SAND:
-                    update_sand(grid, new_grid, r, c)
-            elif state == WOOD:
-                if new_grid[r, c] == WOOD:
-                    update_wood(grid, new_grid, r, c)
-
-    # 5) WATER
-    idx_list = list(range(rows * cols))
-    random.shuffle(idx_list)
-    for idx in idx_list:
-        r = idx // cols
-        c = idx % cols
-        if grid[r, c] == WATER or water_amount[r, c] > 0:
-            spread_water_once(r, c, new_grid)
-    for r in range(rows):
-        for c in range(cols):
-            if water_amount[r, c] > 0.01:
-                if new_grid[r, c] not in (FIRE, WOOD, SMOKE, BALLOON):
-                    new_grid[r, c] = WATER
+    if water_levels[r, c] > 1.0 and r - 1 >= 0:
+        if old_grid[r-1, c] in (0, 7):
+            if old_grid[r-1, c] == 7:
+                capacity = max(0, 1.0 - water_levels[r-1, c])
             else:
-                if new_grid[r, c] == WATER:
-                    new_grid[r, c] = EMPTY
-
-    return new_grid
-
-# ------------------------ Risanje ------------------------
-
-def get_water_color(amount):
-    """
-    Glede na količino vode vrne ustrezno modro barvo.
-    """
-    alpha = min(amount / MAX_WATER_CAPACITY, 1.0)
-    r1, g1, b1 = (150, 150, 255)
-    r2, g2, b2 = (0, 0, 150)
-    r = int(r1 + (r2 - r1) * alpha)
-    g = int(g1 + (g2 - g1) * alpha)
-    b = int(b1 + (b2 - b1) * alpha)
-    return (r, g, b)
+                capacity = 1.0
+            flow = min(water_levels[r, c] - 1.0, capacity)
+            if flow > 0:
+                water_levels[r-1, c] += flow
+                water_levels[r, c] -= flow
+                new_grid[r-1, c] = 7
+                new_grid[r, c] = 7 if water_levels[r, c] > 0 else 0
 
 def draw_grid(screen, grid):
-    """
-    Nariše trenutno mrežo na zaslon.
-    """
     screen.fill(BLACK)
     rows, cols = grid.shape
     for r in range(rows):
         for c in range(cols):
-            st = grid[r, c]
-            if st == WATER:
-                amt = water_amount[r, c]
-                if amt > 0.01:
-                    color = get_water_color(amt)
-                else:
-                    color = BLACK
+            state = grid[r, c]
+            if state == 7:
+                amt = water_levels[r, c]
+                amt = min(amt, 2.0)
+                t = amt / 2.0 
+                r_val = int(173 * (1-t) + 0 * t)
+                g_val = int(216 * (1-t) + 0 * t)
+                b_val = int(230 * (1-t) + 139 * t)
+                color = (r_val, g_val, b_val)
             else:
-                color = BASE_COLOR_MAP[st]
-            if st != EMPTY or (st == WATER and water_amount[r, c] > 0):
+                color = BASE_COLOR_MAP[state]
+            if state != 0:
                 x = c * CELL_SIZE
                 y = r * CELL_SIZE
                 pygame.draw.rect(screen, color, (x, y, CELL_SIZE, CELL_SIZE))
+    pygame.display.flip()
 
 def draw_info(screen, generation, selected_state):
-    """
-    Nariše informativni del: trenutno generacijo, izbrani element in legendo.
-    """
     info_surface = pygame.Surface((WIDTH, 50))
     info_surface.set_alpha(200)
     info_surface.fill((50, 50, 50))
-    
-    gen_text = info_font.render(f"Generacija: {generation}", True, WHITE)
     screen.blit(info_surface, (0, 0))
+    gen_text = info_font.render(f"Generation: {generation}", True, WHITE)
     screen.blit(gen_text, (10, 5))
-    
-    state_names = {
-        EMPTY: "EMPTY",
-        LIVE: "LIVE",
-        SAND: "SAND",
-        WOOD: "WOOD",
-        FIRE: "FIRE",
-        SMOKE: "SMOKE",
-        BALLOON: "BALLOON",
-        WATER: "WATER"
-    }
-    sel_text = info_font.render(f"Izbrano: {state_names[selected_state]}", True, WHITE)
+    state_names = {2: "SAND", 3: "FIRE", 4: "WOOD", 7: "WATER"}
+    sel_text = info_font.render(f"Selected: {state_names.get(selected_state, '')}", True, WHITE)
     screen.blit(sel_text, (10, 25))
-    
-    legend = [
-        ("LIVE", WHITE),
-        ("SAND", SAND_COLOR),
-        ("WOOD", WOOD_COLOR),
-        ("FIRE", FIRE_COLOR),
-        ("SMOKE", SMOKE_COLOR),
-        ("BALLOON", BALLOON_COL),
-        ("WATER", WATER_LEGEND)
-    ]
-    x_offset = 200
-    for name, color in legend:
-        pygame.draw.rect(screen, color, (x_offset, 10, 15, 15))
-        legend_text = info_font.render(name, True, WHITE)
-        screen.blit(legend_text, (x_offset + 20, 8))
-        x_offset += 100
 
+    menu_text_lines = [
+        "2  ->  FIRE",
+        "3  ->  SAND",
+        "4  ->  WOOD",
+        "5  ->  WATER"
+    ]
+    box_width = 200
+    box_height = 90
+    box_x = WIDTH - box_width - 10
+    box_y = 10
+    menu_bg = pygame.Surface((box_width, box_height))
+    menu_bg.set_alpha(220)
+    menu_bg.fill((30, 30, 30))
+    screen.blit(menu_bg, (box_x, box_y))
+    pygame.draw.rect(screen, WHITE, (box_x, box_y, box_width, box_height), 2)
+    for i, line in enumerate(menu_text_lines):
+        text_surface = menu_font.render(line, True, WHITE)
+        text_x = box_x + 10
+        text_y = box_y + 5 + i * 22
+        screen.blit(text_surface, (text_x, text_y))
     pygame.display.update()
 
 def mouse_to_grid_pos(mx, my):
-    """Pretvori koordinate miške v indekse mreže."""
     c = mx // CELL_SIZE
     r = my // CELL_SIZE
     return r, c
 
-# ------------------------ Glavna simulacija ------------------------
+def next_generation(grid):
+    rows, cols = grid.shape
+    new_grid = np.copy(grid)
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r, c] == 3:
+                update_fire(grid, new_grid, r, c)
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r, c] in (5, 6):
+                update_smoke(grid, new_grid, r, c)
+    for r in range(rows-1, -1, -1):
+        for c in range(cols):
+            if grid[r, c] == 2:
+                update_sand(grid, new_grid, r, c)
+    for r in range(rows-1, -1, -1):
+        for c in range(cols):
+            if grid[r, c] == 4:
+                update_wood(grid, new_grid, r, c)
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r, c] == 7:
+                update_water(grid, new_grid, r, c)
+    return new_grid
 
 def run_simulation_2D():
     global selected_state
     grid = create_initial_grid(ROWS, COLS, INITIAL_LIVE_RATIO, INITIAL_SAND_RATIO)
+    static_walls = (grid == 1)
     generation = 0
     running = True
     paused = False
 
+    selected_state = 3  
+
     while running:
         clock.tick(FPS)
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-                return  # Return control to caller
+                return
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    running = False  # Exit simulation loop
+                    running = False
                     return
-                elif event.key == pygame.K_0:
-                    selected_state = EMPTY
-                elif event.key == pygame.K_1:
-                    selected_state = WOOD
                 elif event.key == pygame.K_2:
-                    selected_state = FIRE
+                    selected_state = 3  
                 elif event.key == pygame.K_3:
-                    selected_state = SAND
+                    selected_state = 2  
                 elif event.key == pygame.K_4:
-                    selected_state = SMOKE
+                    selected_state = 4  
                 elif event.key == pygame.K_5:
-                    selected_state = LIVE
-                elif event.key == pygame.K_6:
-                    selected_state = BALLOON
-                elif event.key == pygame.K_7:
-                    selected_state = WATER
+                    selected_state = 7  
                 elif paused:
                     paused = False
-
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     mx, my = event.pos
                     r, c = mouse_to_grid_pos(mx, my)
                     if 0 <= r < ROWS and 0 <= c < COLS:
                         grid[r, c] = selected_state
-                        if selected_state == WATER:
-                            water_amount[r, c] = MAX_WATER_CAPACITY
+                        if selected_state == 7:
+                            water_levels[r, c] = 1.0 
                     if paused:
                         paused = False
 
         draw_grid(screen, grid)
         draw_info(screen, generation, selected_state)
-
         new_grid = next_generation(grid)
-
+        new_grid[static_walls] = 1
         if np.array_equal(new_grid, grid):
             if not paused:
                 print(f"Stable state reached at generation {generation}. Pausing simulation...")
             paused = True
         else:
             paused = False
-
         if not paused:
             generation += 1
             grid = new_grid
-
-    return

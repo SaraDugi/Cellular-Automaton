@@ -45,14 +45,15 @@ SMOKE_COLOR = (128, 128, 128)
 BALLOON_COL = (255, 105, 180)
 WATER_LEGEND = (0, 0, 255)
 
+# Define a base color map
 BASE_COLOR_MAP = {
-    EMPTY:    BLACK,
-    LIVE:     WHITE,
-    SAND:     SAND_COLOR,
-    WOOD:     WOOD_COLOR,
-    FIRE:     FIRE_COLOR,
-    SMOKE:    SMOKE_COLOR,
-    BALLOON:  BALLOON_COL,
+    0: BLACK,                     # EMPTY
+    1: (128, 128, 128),           # WALL
+    2: SAND_COLOR,                # SAND
+    3: FIRE_COLOR,                # FIRE
+    4: WOOD_COLOR,                # WOOD
+    5: (96, 96, 96),              # DARK SMOKE (s svetlejša siva)
+    6: (192, 192, 192),           # LIGHT SMOKE (lighter gray)
 }
 
 MAX_WATER_CAPACITY   = 2.0
