@@ -5,7 +5,7 @@ pygame.font.init()
 # ------------------------ Window Settings ------------------------
 WIDTH = 800
 HEIGHT = 600
-CELL_SIZE = 5
+CELL_SIZE = 7
 FPS = 10
 
 # ------------------------ Colors ------------------------
@@ -45,15 +45,16 @@ SMOKE_COLOR = (128, 128, 128)
 BALLOON_COL = (255, 105, 180)
 WATER_LEGEND = (0, 0, 255)
 
-# Define a base color map
 BASE_COLOR_MAP = {
-    0: BLACK,                     # EMPTY
-    1: (128, 128, 128),           # WALL
-    2: SAND_COLOR,                # SAND
-    3: FIRE_COLOR,                # FIRE
-    4: WOOD_COLOR,                # WOOD
-    5: (96, 96, 96),              # DARK SMOKE (s svetlejša siva)
-    6: (192, 192, 192),           # LIGHT SMOKE (lighter gray)
+    0: BLACK,
+    1: (128, 128, 128),
+    2: SAND_COLOR,
+    3: FIRE_COLOR,
+    4: WOOD_COLOR,
+    5: (32, 32, 32),
+    6: (192, 192, 192),
+    7: (0, 0, 255),        
+    8: (255, 105, 180)      
 }
 
 MAX_WATER_CAPACITY   = 2.0

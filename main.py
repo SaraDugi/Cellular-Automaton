@@ -5,8 +5,8 @@ from constants import (
     BLACK, WHITE, RED,
     FONT_TITLE, FONT_MENU, FONT_INPUT, CELL_SIZE
 )
-from automation_1d import run_automaton_1D, draw_1D_automaton
-from simulation_2d import run_simulation_2D
+from oned import run_automaton_1D, draw_1D_automaton
+from twod import run_simulation_2D
 
 class GameState:
     MENU        = 0
