@@ -1,8 +1,6 @@
 import pygame
 import numpy as np
 import random
-# Uvozimo potrebne konstante iz modula constants, kjer so definirane dimenzije zaslona, hitrost osveževanja (FPS),
-# barve, velikost celice, začetni deleži živih celic (stena, pesek) in še dodatni parametri (npr. življenjska doba dima).
 from constants import (
     WIDTH, HEIGHT, CELL_SIZE, FPS,
     BLACK, WHITE,
@@ -13,13 +11,10 @@ from constants import (
     BASE_COLOR_MAP
 )
 
-# Inicializacija pygame in nastavitev osnovnih parametrov okna
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("2D Cellular Automata: Wall/Sand/Fire/Wood/Smoke/Water/Balloon")
 clock = pygame.time.Clock()
-
-# Nastavimo pisave za prikaz informacij in menijev
 info_font = pygame.font.SysFont("Arial", 16)
 menu_font = pygame.font.SysFont("Arial", 18, bold=True)
 
